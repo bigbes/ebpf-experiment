@@ -1,0 +1,4 @@
+package ebpf
+
+func Attach() {
+}
