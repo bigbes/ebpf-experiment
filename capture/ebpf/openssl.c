@@ -7,6 +7,9 @@
 #include "include/bpf_helpers.h"
 #include "include/bpf_tracing.h"
 
+#include "openssl-store.c"
+#include "openssl-args.c"
+
 char _license[] SEC("license") = "Dual BSD/GPL";
 
 #define MAX_BLOCK_SIZE  10 * 1024
@@ -93,6 +96,27 @@ inline __attribute__((always_inline)) int common_send_block_multi(struct pt_regs
     if (total_size > 3 * MAX_BLOCK_SIZE) {
         debug_bpf_printk("common_send_block_multi [part 4]");
         common_send_block(ctx, event, 3, (void *)PT_REGS_PARM2(ctx) + 3 * MAX_BLOCK_SIZE, total_size - 3 * MAX_BLOCK_SIZE);
+    }
+
+    return 0;
+}
+
+SEC("uprobe/SSL_read")
+int uprobe_ssl_read(struct pt_regs *ctx)
+{
+    u64 pid_tgid = bpf_get_current_pid_tgid();
+    u32 pid = pid_tgid >> 32;
+
+    if (target_pid != 0 && target_pid != pid) {
+        return 0;
+    }
+
+    debug_bpf_printk("uprobe/ssl_read [pid: %d]", pid);
+
+
+
+    if (ssl_read_args_store(pid_tgid, 0, 0, (const char *)PT_REGS_PARM2(ctx)) != 0) {
+        debug_bpf_printk("uprobe/ssl_read [pid: %d]: failed to store args", pid);
     }
 
     return 0;

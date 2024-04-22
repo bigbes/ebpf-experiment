@@ -59,3 +59,27 @@ func FindSoSymbols(soPath string) ([]elf.Symbol, error) {
 
 	return file.F.ELFSymbols.NamedSymbols, nil
 }
+
+func Hexdump(data []byte) {
+	for i := 0; i < len(data); i += 16 {
+		fmt.Printf("%08x: ", i)
+		for j := 0; j < 16; j++ {
+			if i+j < len(data) {
+				fmt.Printf("%02x ", data[i+j])
+			} else {
+				fmt.Print("   ")
+			}
+		}
+		fmt.Print(" ")
+		for j := 0; j < 16; j++ {
+			if i+j < len(data) {
+				if data[i+j] >= 32 && data[i+j] <= 126 {
+					fmt.Printf("%c", data[i+j])
+				} else {
+					fmt.Print(".")
+				}
+			}
+		}
+		fmt.Println()
+	}
+}

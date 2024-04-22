@@ -36,7 +36,7 @@ func AttachRB() {
 		return
 	}
 
-	objs := opensslObjects{}
+	objs := openssl_rbObjects{}
 	err = loadOpenssl_rbObjects(&objs, &ebpf.CollectionOptions{
 		Programs: ebpf.ProgramOptions{
 			// LogLevel: ebpf.LogLevelInstruction,
@@ -133,14 +133,19 @@ func AttachRB() {
 				fmt.Println("failed to read ringbuf record", err)
 			}
 
-			perfEvent := opensslEvent{}
+			perfEvent := openssl_rbEvent{}
 
 			buf := bytes.NewBuffer(rec.RawSample)
-			fmt.Println("size:", buf.Len())
 			if err = binary.Read(buf, binary.LittleEndian, &perfEvent); err != nil {
 				fmt.Println("failed to read perf event", err)
 			}
-			fmt.Printf("%#v\n", perfEvent)
+
+			if perfEvent.SkippedBytes > 0 {
+				fmt.Println(perfEvent.Op, "skipped bytes", perfEvent.SkippedBytes)
+			} else {
+				fmt.Println(perfEvent.Op, "body:", string(perfEvent.Bytes[:perfEvent.ByteSize]))
+				Hexdump(perfEvent.Bytes[:perfEvent.ByteSize])
+			}
 		}
 	}()
 

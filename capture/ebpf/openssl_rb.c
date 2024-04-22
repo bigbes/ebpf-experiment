@@ -7,10 +7,14 @@
 #include "include/bpf_helpers.h"
 #include "include/bpf_tracing.h"
 
+#define OPENSSl_VERSION 0x30300000
+#include "openssl-args.c"
+#include "openssl-store.c"
+
 char _license[] SEC("license") = "Dual BSD/GPL";
 
 #define MAX_BLOCK_SIZE  1 * 1024
-#define MAX_BLOCK_COUNT 4
+#define MAX_BLOCK_COUNT 5
 
 const volatile u32 target_pid = 0;
 
@@ -48,22 +52,29 @@ const struct event *unused __attribute__((unused));
 
 static u64 event_count = 0;
 
-inline __attribute__((always_inline)) int common_send_block(struct pt_regs *ctx, struct event *event, u8 block_no, void *block_pos, size_t block_size) {
+inline __attribute__((always_inline)) int common_send_block(struct event *event, u8 block_no, const char *block_pos, size_t block_size) {
     if (block_size > MAX_BLOCK_SIZE) {
         block_size = MAX_BLOCK_SIZE;
     }
 
     event->block_count = block_no;
     event->byte_size = block_size;
-    bpf_probe_read_user((void *)&event->bytes, block_size, (const void *)block_pos);
+    int ret = bpf_probe_read((void *)&event->bytes, block_size, (const void *)block_pos);
+    if (ret) {
+        debug_bpf_printk(
+            "(OPENSSL) bpf_probe_read bpf_probe_read failed, ret :%d\n",
+            ret);
+        return 0;
+    }
 
     long rv = bpf_ringbuf_output(&events, event, sizeof(struct event), 0);
     debug_bpf_printk("common_send_block [block_no: %d, block_size: %d, rv: %d]", block_no, block_size, rv);
+    debug_bpf_printk("string: %32s", event->bytes);
 
     return 0;
 }
 
-inline __attribute__((always_inline)) int block_count(struct pt_regs *ctx, size_t total_size) {
+inline __attribute__((always_inline)) int block_count(size_t total_size) {
     int block_count = int_ceil(total_size, MAX_BLOCK_SIZE);
     if (block_count > MAX_BLOCK_COUNT) {
         block_count = -1;
@@ -72,25 +83,65 @@ inline __attribute__((always_inline)) int block_count(struct pt_regs *ctx, size_
 }
 
 
-inline __attribute__((always_inline)) int common_send_block_multi(struct pt_regs *ctx, struct event *event, void *position, size_t total_size) {
+inline __attribute__((always_inline)) int common_send_block_multi(struct event *event, const char *position, size_t total_size) {
     if (total_size > 0) {
         debug_bpf_printk("common_send_block_multi [part 1]");
-        common_send_block(ctx, event, 0, (void *)PT_REGS_PARM2(ctx), total_size);
+        common_send_block(event, 0, position, total_size);
     }
 
     if (total_size > MAX_BLOCK_SIZE) {
         debug_bpf_printk("common_send_block_multi [part 2]");
-        common_send_block(ctx, event, 1, (void *)PT_REGS_PARM2(ctx) + MAX_BLOCK_SIZE, total_size - MAX_BLOCK_SIZE);
+        common_send_block(event, 1, position + MAX_BLOCK_SIZE, total_size - MAX_BLOCK_SIZE);
     }
 
     if (total_size > 2 * MAX_BLOCK_SIZE) {
         debug_bpf_printk("common_send_block_multi [part 3]");
-        common_send_block(ctx, event, 2, (void *)PT_REGS_PARM2(ctx) + 2 * MAX_BLOCK_SIZE, total_size - 2 * MAX_BLOCK_SIZE);
+        common_send_block(event, 2, position + 2 * MAX_BLOCK_SIZE, total_size - 2 * MAX_BLOCK_SIZE);
     }
 
     if (total_size > 3 * MAX_BLOCK_SIZE) {
         debug_bpf_printk("common_send_block_multi [part 4]");
-        common_send_block(ctx, event, 3, (void *)PT_REGS_PARM2(ctx) + 3 * MAX_BLOCK_SIZE, total_size - 3 * MAX_BLOCK_SIZE);
+        common_send_block(event, 3, position + 3 * MAX_BLOCK_SIZE, total_size - 3 * MAX_BLOCK_SIZE);
+    }
+
+    if (total_size > 4 * MAX_BLOCK_SIZE) {
+        debug_bpf_printk("common_send_block_multi [part 5]");
+        common_send_block(event, 4, position + 4 * MAX_BLOCK_SIZE, total_size - 4 * MAX_BLOCK_SIZE);
+    }
+
+    return 0;
+}
+
+SEC("uprobe/SSL_read")
+int uprobe_ssl_read(struct pt_regs *ctx)
+{
+    u64 current_pid_tgid = bpf_get_current_pid_tgid();
+    u32 pid = current_pid_tgid >> 32;
+
+    u64 current_uid_gid = bpf_get_current_uid_gid();
+    u32 uid = current_uid_gid;
+
+    if (target_pid != 0 && target_pid != pid) {
+        return 0;
+    }
+
+    void *ssl = (void *)PT_REGS_PARM1(ctx);
+
+    u64 version;
+    u32 rbio_fd;
+
+    if (ssl_read_version(ssl, &version) != 0) {
+        return 0;
+    }
+
+    if (ssl_read_rbio_fd(ssl, &rbio_fd) != 0) {
+        return 0;
+    }
+
+    const char *buf = (const char *)PT_REGS_PARM2(ctx);
+
+    if (ssl_read_args_store(current_pid_tgid, version, rbio_fd, buf) != 0) {
+        return 0;
     }
 
     return 0;
@@ -126,11 +177,17 @@ int uretprobe_ssl_read(struct pt_regs *ctx)
     event->pid = (pid_t )pid;
     event->event_id = event_count++;
     event->block_count = 0;
-    event->block_total = block_count(ctx, ret);
+    event->block_total = block_count(ret);
     event->byte_size = 0;
 
+    struct active_ssl_buf *ssl_buf = ssl_read_args_fetch_and_delete(pid_tgid);
+    if (ssl_buf == NULL) {
+        debug_bpf_printk("uprobe/ssl_read [pid: %d]: ssl_buf is NULL", pid);
+        return 0;
+    }
 
-    if (ret > 4 * MAX_BLOCK_SIZE) {
+
+    if (ret > MAX_BLOCK_COUNT * MAX_BLOCK_SIZE) {
         debug_bpf_printk("uprobe/ssl_read [size: %d]: skipping", ret);
 
         event->skipped_bytes = ret;
@@ -138,8 +195,9 @@ int uretprobe_ssl_read(struct pt_regs *ctx)
     } else {
         debug_bpf_printk("uprobe/ssl_read [size: %d]: sending", ret);
 
-        common_send_block_multi(ctx, event, (void *)PT_REGS_PARM2(ctx), ret);
+        common_send_block_multi(event, ssl_buf->buf, ret);
     }
+
 
     return 0;
 }
@@ -211,11 +269,11 @@ int uretprobe_ssl_write(struct pt_regs *ctx)
     event->pid = (pid_t )pid;
     event->event_id = event_count++;
     event->block_count = 0;
-    event->block_total = block_count(ctx, ret);
+    event->block_total = block_count(ret);
     event->byte_size = 0;
 
 
-    if (ret > 4 * MAX_BLOCK_SIZE) {
+    if (ret > MAX_BLOCK_COUNT * MAX_BLOCK_SIZE) {
         debug_bpf_printk("uprobe/ssl_read [size: %d]: skipping", ret);
 
         event->skipped_bytes = ret;
@@ -223,7 +281,7 @@ int uretprobe_ssl_write(struct pt_regs *ctx)
     } else {
         debug_bpf_printk("uprobe/ssl_read [size: %d]: sending", ret);
 
-        common_send_block_multi(ctx, event, (void *)PT_REGS_PARM2(ctx), ret);
+        common_send_block_multi(event, (const char *)PT_REGS_PARM2(ctx), ret);
     }
 
     return 0;

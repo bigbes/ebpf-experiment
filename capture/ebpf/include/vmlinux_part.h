@@ -127,4 +127,11 @@ enum {
 	BPF_F_CTXLEN_MASK = 0,
 } __attribute__((mode(word)));
 
+enum {
+	BPF_ANY = 0,
+	BPF_NOEXIST = 1,
+	BPF_EXIST = 2,
+	BPF_F_LOCK = 4,
+};
+
 #endif /* __VMLINUX_H__ */
