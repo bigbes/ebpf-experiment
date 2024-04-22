@@ -76,3 +76,4 @@ dkms.conf
 # Go workspace file
 go.work
 
+offset/bin/*
