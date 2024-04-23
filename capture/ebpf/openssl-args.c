@@ -1,3 +1,5 @@
+//go:build ignore
+
 #include "include/vmlinux_part.h"
 #include "include/helpers.h"
 
@@ -68,6 +70,8 @@ int store_ssl_fd(u64 ssl, u32 fd) {
 }
 
 static inline __attribute__((always_inline))
-int fetch_ssl_fd(u64 ssl, u32 **fd) {
-    *fd = bpf_map_lookup_elem(&ssl_fd_map, &ssl);
+int fetch_ssl_fd(u64 ssl, u32 *fd) {
+    u32 *elem = bpf_map_lookup_elem(&ssl_fd_map, &ssl);
+    *fd = elem ? *elem : 0;
+    return elem ? 0 : -1;
 }

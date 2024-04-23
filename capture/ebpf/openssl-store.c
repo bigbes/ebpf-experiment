@@ -1,4 +1,4 @@
-/* vim: set filetype=c */
+//go:build ignore
 
 #include "include/vmlinux_part.h"
 #include "include/helpers.h"
@@ -13,16 +13,17 @@ struct active_ssl_buf {
 
 struct {
     __uint(type,        BPF_MAP_TYPE_HASH);
-    __uint(key,         sizeof(u64));
-    __uint(value,       sizeof(struct active_ssl_buf));
+    __uint(key_size,    sizeof(u64));
+    __uint(value_size,  sizeof(struct active_ssl_buf));
     __uint(max_entries, 1024);
 } active_ssl_read_args_map SEC(".maps");
 
 static inline __attribute__((always_inline))
 int ssl_read_args_store(u64 tgid, s32 version, u32 fd, const char *buf) {
+    u64 tgid_v = tgid;
     struct active_ssl_buf active_ssl_buf_v = {version, fd, buf};
 
-    return bpf_map_update_elem(&active_ssl_read_args_map, &tgid,
+    return bpf_map_update_elem(&active_ssl_read_args_map, &tgid_v,
                                &active_ssl_buf_v, BPF_ANY);
 }
 
@@ -40,8 +41,8 @@ struct active_ssl_buf *ssl_read_args_fetch_and_delete(u64 tgid) {
 
 struct {
     __uint(type,        BPF_MAP_TYPE_HASH);
-    __uint(key,         sizeof(u64));
-    __uint(value,       sizeof(struct active_ssl_buf));
+    __uint(key_size,    sizeof(u64));
+    __uint(value_size,  sizeof(struct active_ssl_buf));
     __uint(max_entries, 1024);
 } active_ssl_write_args_map SEC(".maps");
 

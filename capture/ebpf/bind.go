@@ -11,33 +11,12 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
-	"github.com/cilium/ebpf/perf"
+	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/saferwall/elf"
 )
 
-func GetAttachableNames() ([]string, error) {
-	osslTable, err := loadOpenssl()
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]string, 0, len(osslTable.Programs))
-	for _, prog := range osslTable.Programs {
-		symbolExpectedName := prog.SectionName
-		if strings.HasPrefix(symbolExpectedName, "uprobe/") {
-			symbolExpectedName = symbolExpectedName[len("uprobe/"):]
-		} else if strings.HasPrefix(symbolExpectedName, "uretprobe/") {
-			symbolExpectedName = symbolExpectedName[len("uretprobe/"):]
-		}
-
-		out = append(out, symbolExpectedName)
-	}
-
-	return out, nil
-}
-
-func Attach() {
+func AttachRB() {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		fmt.Println("failed to remove memlock rlimit:", err)
 		return
@@ -57,8 +36,8 @@ func Attach() {
 		return
 	}
 
-	objs := opensslObjects{}
-	err = loadOpensslObjects(&objs, &ebpf.CollectionOptions{
+	objs := openssl_rbObjects{}
+	err = loadOpenssl_rbObjects(&objs, &ebpf.CollectionOptions{
 		Programs: ebpf.ProgramOptions{
 			// LogLevel: ebpf.LogLevelInstruction,
 			LogLevel: ebpf.LogLevelBranch,
@@ -82,14 +61,13 @@ func Attach() {
 	defer func() { _ = objs.Close() }()
 
 	// 3. Load eBPF programs
-	osslTable, err := loadOpenssl()
+	osslTable, err := loadOpenssl_rb()
 	if err != nil {
 		fmt.Println("failed to load eBPF programs:", err)
 		return
 	}
 
-	osslTable.RewriteConstants(map[string]interface{}{})
-
+	osslTable.Programs["uprobe_ssl_read"].AttachTarget = objs.UprobeSslRead
 	osslTable.Programs["uretprobe_ssl_read"].AttachTarget = objs.UretprobeSslRead
 	osslTable.Programs["uretprobe_ssl_write"].AttachTarget = objs.UretprobeSslWrite
 	// osslTable.Programs["uretprobe_ssl_read_ex"].AttachTarget = objs.UretprobeSslReadEx
@@ -123,7 +101,7 @@ func Attach() {
 		if onReturn {
 			linkI, err = lib.Uretprobe(symbolExpectedName, prog.AttachTarget, nil)
 		} else {
-			// linkI, err = lib.Uprobe(symbolExpectedName, prog.AttachTarget, nil)
+			linkI, err = lib.Uprobe(symbolExpectedName, prog.AttachTarget, nil)
 		}
 
 		if err != nil {
@@ -136,9 +114,9 @@ func Attach() {
 		}(linkI)
 	}
 
-	rd, err := perf.NewReader(objs.Events, 1024*10)
+	rd, err := ringbuf.NewReader(objs.Events)
 	if err != nil {
-		fmt.Println("failed to create perf reader", err)
+		fmt.Println("failed to create ringbuf reader", err)
 		return
 	}
 
@@ -149,25 +127,26 @@ func Attach() {
 			fmt.Println("read")
 
 			switch {
-			case errors.Is(err, perf.ErrClosed):
-				fmt.Println("perf reader closed")
+			case errors.Is(err, ringbuf.ErrClosed):
+				fmt.Println("ringbuf reader closed")
 				return
 			case err != nil:
-				fmt.Println("failed to read perf record", err)
+				fmt.Println("failed to read ringbuf record", err)
 			}
 
-			if rec.LostSamples != 0 {
-				fmt.Println("lost samples", rec.LostSamples)
-			}
-
-			perfEvent := opensslEvent{}
+			perfEvent := openssl_rbEvent{}
 
 			buf := bytes.NewBuffer(rec.RawSample)
-			fmt.Println("size:", buf.Len())
 			if err = binary.Read(buf, binary.LittleEndian, &perfEvent); err != nil {
 				fmt.Println("failed to read perf event", err)
 			}
-			fmt.Printf("%#v\n", perfEvent)
+
+			if perfEvent.SkippedBytes > 0 {
+				fmt.Println(perfEvent.Op, "skipped bytes", perfEvent.SkippedBytes)
+			} else {
+				fmt.Println(perfEvent.Op, "body:", string(perfEvent.Bytes[:perfEvent.ByteSize]))
+				Hexdump(perfEvent.Bytes[:perfEvent.ByteSize])
+			}
 		}
 	}()
 

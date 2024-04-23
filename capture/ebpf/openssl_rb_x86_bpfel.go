@@ -66,6 +66,7 @@ type openssl_rbSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type openssl_rbProgramSpecs struct {
+	UprobeSslRead     *ebpf.ProgramSpec `ebpf:"uprobe_ssl_read"`
 	UretprobeSslRead  *ebpf.ProgramSpec `ebpf:"uretprobe_ssl_read"`
 	UretprobeSslWrite *ebpf.ProgramSpec `ebpf:"uretprobe_ssl_write"`
 }
@@ -74,8 +75,11 @@ type openssl_rbProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type openssl_rbMapSpecs struct {
-	EventAllocator *ebpf.MapSpec `ebpf:"event_allocator"`
-	Events         *ebpf.MapSpec `ebpf:"events"`
+	ActiveSslReadArgsMap  *ebpf.MapSpec `ebpf:"active_ssl_read_args_map"`
+	ActiveSslWriteArgsMap *ebpf.MapSpec `ebpf:"active_ssl_write_args_map"`
+	EventAllocator        *ebpf.MapSpec `ebpf:"event_allocator"`
+	Events                *ebpf.MapSpec `ebpf:"events"`
+	SslFdMap              *ebpf.MapSpec `ebpf:"ssl_fd_map"`
 }
 
 // openssl_rbObjects contains all objects after they have been loaded into the kernel.
@@ -97,14 +101,20 @@ func (o *openssl_rbObjects) Close() error {
 //
 // It can be passed to loadOpenssl_rbObjects or ebpf.CollectionSpec.LoadAndAssign.
 type openssl_rbMaps struct {
-	EventAllocator *ebpf.Map `ebpf:"event_allocator"`
-	Events         *ebpf.Map `ebpf:"events"`
+	ActiveSslReadArgsMap  *ebpf.Map `ebpf:"active_ssl_read_args_map"`
+	ActiveSslWriteArgsMap *ebpf.Map `ebpf:"active_ssl_write_args_map"`
+	EventAllocator        *ebpf.Map `ebpf:"event_allocator"`
+	Events                *ebpf.Map `ebpf:"events"`
+	SslFdMap              *ebpf.Map `ebpf:"ssl_fd_map"`
 }
 
 func (m *openssl_rbMaps) Close() error {
 	return _Openssl_rbClose(
+		m.ActiveSslReadArgsMap,
+		m.ActiveSslWriteArgsMap,
 		m.EventAllocator,
 		m.Events,
+		m.SslFdMap,
 	)
 }
 
@@ -112,12 +122,14 @@ func (m *openssl_rbMaps) Close() error {
 //
 // It can be passed to loadOpenssl_rbObjects or ebpf.CollectionSpec.LoadAndAssign.
 type openssl_rbPrograms struct {
+	UprobeSslRead     *ebpf.Program `ebpf:"uprobe_ssl_read"`
 	UretprobeSslRead  *ebpf.Program `ebpf:"uretprobe_ssl_read"`
 	UretprobeSslWrite *ebpf.Program `ebpf:"uretprobe_ssl_write"`
 }
 
 func (p *openssl_rbPrograms) Close() error {
 	return _Openssl_rbClose(
+		p.UprobeSslRead,
 		p.UretprobeSslRead,
 		p.UretprobeSslWrite,
 	)
