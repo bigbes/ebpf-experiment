@@ -12,7 +12,7 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type openssl_rbEvent struct {
+type opensslEvent struct {
 	Op           uint8
 	_            [3]byte
 	Pid          int32
@@ -21,32 +21,32 @@ type openssl_rbEvent struct {
 	BlockCount   int8
 	BlockTotal   uint8
 	ByteSize     uint16
-	Bytes        [1024]uint8
+	Bytes        [4096]uint8
 	_            [4]byte
 }
 
-// loadOpenssl_rb returns the embedded CollectionSpec for openssl_rb.
-func loadOpenssl_rb() (*ebpf.CollectionSpec, error) {
-	reader := bytes.NewReader(_Openssl_rbBytes)
+// loadOpenssl returns the embedded CollectionSpec for openssl.
+func loadOpenssl() (*ebpf.CollectionSpec, error) {
+	reader := bytes.NewReader(_OpensslBytes)
 	spec, err := ebpf.LoadCollectionSpecFromReader(reader)
 	if err != nil {
-		return nil, fmt.Errorf("can't load openssl_rb: %w", err)
+		return nil, fmt.Errorf("can't load openssl: %w", err)
 	}
 
 	return spec, err
 }
 
-// loadOpenssl_rbObjects loads openssl_rb and converts it into a struct.
+// loadOpensslObjects loads openssl and converts it into a struct.
 //
 // The following types are suitable as obj argument:
 //
-//	*openssl_rbObjects
-//	*openssl_rbPrograms
-//	*openssl_rbMaps
+//	*opensslObjects
+//	*opensslPrograms
+//	*opensslMaps
 //
 // See ebpf.CollectionSpec.LoadAndAssign documentation for details.
-func loadOpenssl_rbObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
-	spec, err := loadOpenssl_rb()
+func loadOpensslObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
+	spec, err := loadOpenssl()
 	if err != nil {
 		return err
 	}
@@ -54,88 +54,94 @@ func loadOpenssl_rbObjects(obj interface{}, opts *ebpf.CollectionOptions) error 
 	return spec.LoadAndAssign(obj, opts)
 }
 
-// openssl_rbSpecs contains maps and programs before they are loaded into the kernel.
+// opensslSpecs contains maps and programs before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
-type openssl_rbSpecs struct {
-	openssl_rbProgramSpecs
-	openssl_rbMapSpecs
+type opensslSpecs struct {
+	opensslProgramSpecs
+	opensslMapSpecs
 }
 
-// openssl_rbSpecs contains programs before they are loaded into the kernel.
+// opensslSpecs contains programs before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
-type openssl_rbProgramSpecs struct {
+type opensslProgramSpecs struct {
 	UprobeSslRead     *ebpf.ProgramSpec `ebpf:"uprobe_ssl_read"`
+	UprobeSslWrite    *ebpf.ProgramSpec `ebpf:"uprobe_ssl_write"`
 	UretprobeSslRead  *ebpf.ProgramSpec `ebpf:"uretprobe_ssl_read"`
 	UretprobeSslWrite *ebpf.ProgramSpec `ebpf:"uretprobe_ssl_write"`
 }
 
-// openssl_rbMapSpecs contains maps before they are loaded into the kernel.
+// opensslMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
-type openssl_rbMapSpecs struct {
+type opensslMapSpecs struct {
 	ActiveSslReadArgsMap  *ebpf.MapSpec `ebpf:"active_ssl_read_args_map"`
 	ActiveSslWriteArgsMap *ebpf.MapSpec `ebpf:"active_ssl_write_args_map"`
 	EventAllocator        *ebpf.MapSpec `ebpf:"event_allocator"`
 	Events                *ebpf.MapSpec `ebpf:"events"`
 	SslFdMap              *ebpf.MapSpec `ebpf:"ssl_fd_map"`
+	SslStatsMap           *ebpf.MapSpec `ebpf:"ssl_stats_map"`
 }
 
-// openssl_rbObjects contains all objects after they have been loaded into the kernel.
+// opensslObjects contains all objects after they have been loaded into the kernel.
 //
-// It can be passed to loadOpenssl_rbObjects or ebpf.CollectionSpec.LoadAndAssign.
-type openssl_rbObjects struct {
-	openssl_rbPrograms
-	openssl_rbMaps
+// It can be passed to loadOpensslObjects or ebpf.CollectionSpec.LoadAndAssign.
+type opensslObjects struct {
+	opensslPrograms
+	opensslMaps
 }
 
-func (o *openssl_rbObjects) Close() error {
-	return _Openssl_rbClose(
-		&o.openssl_rbPrograms,
-		&o.openssl_rbMaps,
+func (o *opensslObjects) Close() error {
+	return _OpensslClose(
+		&o.opensslPrograms,
+		&o.opensslMaps,
 	)
 }
 
-// openssl_rbMaps contains all maps after they have been loaded into the kernel.
+// opensslMaps contains all maps after they have been loaded into the kernel.
 //
-// It can be passed to loadOpenssl_rbObjects or ebpf.CollectionSpec.LoadAndAssign.
-type openssl_rbMaps struct {
+// It can be passed to loadOpensslObjects or ebpf.CollectionSpec.LoadAndAssign.
+type opensslMaps struct {
 	ActiveSslReadArgsMap  *ebpf.Map `ebpf:"active_ssl_read_args_map"`
 	ActiveSslWriteArgsMap *ebpf.Map `ebpf:"active_ssl_write_args_map"`
 	EventAllocator        *ebpf.Map `ebpf:"event_allocator"`
 	Events                *ebpf.Map `ebpf:"events"`
 	SslFdMap              *ebpf.Map `ebpf:"ssl_fd_map"`
+	SslStatsMap           *ebpf.Map `ebpf:"ssl_stats_map"`
 }
 
-func (m *openssl_rbMaps) Close() error {
-	return _Openssl_rbClose(
+func (m *opensslMaps) Close() error {
+	return _OpensslClose(
 		m.ActiveSslReadArgsMap,
 		m.ActiveSslWriteArgsMap,
 		m.EventAllocator,
 		m.Events,
 		m.SslFdMap,
+		m.SslStatsMap,
 	)
 }
 
-// openssl_rbPrograms contains all programs after they have been loaded into the kernel.
+// opensslPrograms contains all programs after they have been loaded into the kernel.
 //
-// It can be passed to loadOpenssl_rbObjects or ebpf.CollectionSpec.LoadAndAssign.
-type openssl_rbPrograms struct {
+// It can be passed to loadOpensslObjects or ebpf.CollectionSpec.LoadAndAssign.
+type opensslPrograms struct {
 	UprobeSslRead     *ebpf.Program `ebpf:"uprobe_ssl_read"`
+	UprobeSslWrite    *ebpf.Program `ebpf:"uprobe_ssl_write"`
 	UretprobeSslRead  *ebpf.Program `ebpf:"uretprobe_ssl_read"`
 	UretprobeSslWrite *ebpf.Program `ebpf:"uretprobe_ssl_write"`
 }
 
-func (p *openssl_rbPrograms) Close() error {
-	return _Openssl_rbClose(
+func (p *opensslPrograms) Close() error {
+	return _OpensslClose(
 		p.UprobeSslRead,
+		p.UprobeSslWrite,
 		p.UretprobeSslRead,
 		p.UretprobeSslWrite,
 	)
 }
 
-func _Openssl_rbClose(closers ...io.Closer) error {
+func _OpensslClose(closers ...io.Closer) error {
 	for _, closer := range closers {
 		if err := closer.Close(); err != nil {
 			return err
@@ -146,5 +152,5 @@ func _Openssl_rbClose(closers ...io.Closer) error {
 
 // Do not access this directly.
 //
-//go:embed openssl_rb_x86_bpfel.o
-var _Openssl_rbBytes []byte
+//go:embed openssl_x86_bpfel.o
+var _OpensslBytes []byte

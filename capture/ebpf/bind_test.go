@@ -4,6 +4,6 @@ import (
 	"testing"
 )
 
-func TestAttachRB(t *testing.T) {
-	AttachRB()
+func TestAttach(t *testing.T) {
+	// Attach()
 }

@@ -10,11 +10,12 @@
 #define OPENSSl_VERSION 0x30300000
 #include "openssl-args.c"
 #include "openssl-store.c"
+#include "openssl-stats.c"
 
 char _license[] SEC("license") = "Dual BSD/GPL";
 
-#define MAX_BLOCK_SIZE  1 * 1024
-#define MAX_BLOCK_COUNT 5
+#define MAX_BLOCK_SIZE  4 * 1024
+#define MAX_BLOCK_COUNT 4
 
 const volatile u32 target_pid = 0;
 
@@ -102,11 +103,6 @@ inline __attribute__((always_inline)) int common_send_block_multi(struct event *
     if (total_size > 3 * MAX_BLOCK_SIZE) {
         debug_bpf_printk("common_send_block_multi [part 4]");
         common_send_block(event, 3, position + 3 * MAX_BLOCK_SIZE, total_size - 3 * MAX_BLOCK_SIZE);
-    }
-
-    if (total_size > 4 * MAX_BLOCK_SIZE) {
-        debug_bpf_printk("common_send_block_multi [part 5]");
-        common_send_block(event, 4, position + 4 * MAX_BLOCK_SIZE, total_size - 4 * MAX_BLOCK_SIZE);
     }
 
     return 0;
@@ -197,6 +193,7 @@ int uretprobe_ssl_read(struct pt_regs *ctx)
         common_send_block_multi(event, ssl_buf->buf, ret);
     }
 
+    ssl_stats_increment_read(ret);
 
     return 0;
 }
@@ -262,11 +259,11 @@ int uprobe_ssl_write(struct pt_regs *ctx)
     u64 version;
     u32 rbio_fd;
 
-    if (ssl_write_version(ssl, &version) != 0) {
+    if (ssl_read_version(ssl, &version) != 0) {
         return 0;
     }
 
-    if (ssl_write_rbio_fd(ssl, &rbio_fd) != 0) {
+    if (ssl_read_wbio_fd(ssl, &rbio_fd) != 0) {
         return 0;
     }
 
@@ -329,6 +326,7 @@ int uretprobe_ssl_write(struct pt_regs *ctx)
         common_send_block_multi(event, ssl_buf->buf, ret);
     }
 
+    ssl_stats_increment_write(ret);
 
     return 0;
 }
