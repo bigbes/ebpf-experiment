@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strings"
 
 	"github.com/saferwall/elf"
 )
@@ -147,12 +148,19 @@ func ReadOpenSSLVersionFromFile(opensslPath string) (string, error) {
 // 	// return string(sectionBody[symbol.Value : symbol.Value+symbol.Size]), nil
 // }
 
+const EnvLibraryPaths = "LIBRARY_PATH"
+
 func FindSo(name string) (string, error) {
 	libDirs := []string{
 		"/lib",
 		"/lib64",
 		"/usr/lib",
 		"/usr/lib64",
+	}
+
+	if envLibraryPath := os.Getenv(EnvLibraryPaths); envLibraryPath != "" {
+		extLibraryPath := strings.Split(envLibraryPath, ":")
+		libDirs = append(libDirs, extLibraryPath...)
 	}
 
 	for _, libDir := range libDirs {
