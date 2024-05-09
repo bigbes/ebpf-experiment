@@ -15,9 +15,11 @@ import (
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
 	"github.com/saferwall/elf"
-
-	"github.com/soverenio/vanilla/throw"
 )
+
+func wrap(err error, msg string) error {
+	return fmt.Errorf("%s: %w", msg, err)
+}
 
 type Binder struct {
 	opensslPath    string
@@ -34,24 +36,24 @@ type Binder struct {
 
 func (b *Binder) Init(ctx context.Context) error {
 	if err := rlimit.RemoveMemlock(); err != nil {
-		return throw.W(err, "failed to remove memlock rlimit")
+		return wrap(err, "failed to remove memlock rlimit")
 	}
 
 	// 1. Find libssl.so
 	opensslPath, err := FindOpenSSLSo()
 	if err != nil {
-		return throw.W(err, "failed to find libssl.so")
+		return wrap(err, "failed to find libssl.so")
 	}
 
 	symbols, err := FindSoSymbols(opensslPath)
 	if err != nil {
-		return throw.W(err, "failed to find symbols in libssl.so")
+		return wrap(err, "failed to find symbols in libssl.so")
 	}
 	b.symbols = Convert(symbols, func(in elf.Symbol) string { return in.Name })
 
 	libcryptoPath, err := FindLibCryptoSo()
 	if err != nil {
-		return throw.W(err, "failed to find libcrypto.so")
+		return wrap(err, "failed to find libcrypto.so")
 	}
 
 	version, err := ReadOpenSSLVersionFromFile(libcryptoPath)
@@ -70,12 +72,12 @@ func (b *Binder) Attach() error {
 		MapReplacements: nil,
 	})
 	if err != nil {
-		return throw.W(err, "failed to load eBPF programs")
+		return wrap(err, "failed to load eBPF programs")
 	}
 
 	b.spec, err = loadOpenssl()
 	if err != nil {
-		return throw.W(err, "failed to load eBPF programs")
+		return wrap(err, "failed to load eBPF programs")
 	}
 
 	{
@@ -88,13 +90,13 @@ func (b *Binder) Attach() error {
 	for i := 0; i < 4; i++ {
 		err = b.objects.SslStatsMap.Put(uint32(i), uint64(0))
 		if err != nil {
-			return throw.W(err, "failed to put ssl stats map "+strconv.Itoa(i))
+			return wrap(err, "failed to put ssl stats map "+strconv.Itoa(i))
 		}
 	}
 
 	lib, err := link.OpenExecutable(b.opensslPath)
 	if err != nil {
-		return throw.W(err, "failed to open shared lib")
+		return wrap(err, "failed to open shared lib")
 	}
 
 	for _, prog := range b.spec.Programs {
@@ -123,7 +125,7 @@ func (b *Binder) Attach() error {
 		}
 
 		if err != nil {
-			return throw.W(err, "failed to attach")
+			return wrap(err, "failed to attach")
 		}
 
 		b.links = append(b.links, linkI)
@@ -131,7 +133,7 @@ func (b *Binder) Attach() error {
 
 	b.rbuf, err = ringbuf.NewReader(b.objects.Events)
 	if err != nil {
-		return throw.W(err, "failed to create ringbuf reader")
+		return wrap(err, "failed to create ringbuf reader")
 	}
 
 	return nil
@@ -194,22 +196,22 @@ func (b *Binder) Stats() (BinderStats, error) {
 
 	err := b.objects.SslStatsMap.Lookup(uint32(0), &stats.ReadCount)
 	if err != nil {
-		return BinderStats{}, throw.W(err, "failed to lookup ssl read count stats")
+		return BinderStats{}, wrap(err, "failed to lookup ssl read count stats")
 	}
 
 	err = b.objects.SslStatsMap.Lookup(uint32(1), &stats.ReadSize)
 	if err != nil {
-		return BinderStats{}, throw.W(err, "failed to lookup ssl read size stats")
+		return BinderStats{}, wrap(err, "failed to lookup ssl read size stats")
 	}
 
 	err = b.objects.SslStatsMap.Lookup(uint32(2), &stats.WriteCount)
 	if err != nil {
-		return BinderStats{}, throw.W(err, "failed to lookup ssl read write count")
+		return BinderStats{}, wrap(err, "failed to lookup ssl read write count")
 	}
 
 	err = b.objects.SslStatsMap.Lookup(uint32(3), &stats.WriteSize)
 	if err != nil {
-		return BinderStats{}, throw.W(err, "failed to lookup ssl read write stats")
+		return BinderStats{}, wrap(err, "failed to lookup ssl read write stats")
 	}
 
 	return stats, nil
