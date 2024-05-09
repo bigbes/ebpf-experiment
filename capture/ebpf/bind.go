@@ -153,6 +153,22 @@ func (b *Binder) Detach(ctx context.Context) error {
 func (b *Binder) Events(ctx context.Context) error {
 	var record ringbuf.Record
 
+	var (
+		totalBytesRead, totalBytesWritten      int
+		totalOpsRead, totalOpsWrite            int
+		totalBytesRSkipped, totalBytesWSkipped int
+	)
+
+	defer func() {
+		fmt.Println("Total bytes read", totalBytesRead)
+		fmt.Println("Total bytes written", totalBytesWritten)
+		fmt.Println("Total bytes read skipped", totalBytesRSkipped)
+		fmt.Println("Total bytes read written", totalBytesWSkipped)
+		fmt.Println("Total packets read", totalOpsRead)
+		fmt.Println("Total packets write", totalOpsWrite)
+		fmt.Println("---------------------------------")
+	}()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -176,10 +192,19 @@ func (b *Binder) Events(ctx context.Context) error {
 			return nil
 		}
 
-		if perfEvent.SkippedBytes > 0 {
-			fmt.Println(perfEvent.Op, "skipped bytes", perfEvent.SkippedBytes)
-		} else {
-			fmt.Println(perfEvent.Op, "read bytes", perfEvent.ByteSize)
+		switch {
+		case perfEvent.SkippedBytes > 0 && perfEvent.Op == 1:
+			totalBytesRSkipped += int(perfEvent.SkippedBytes)
+			totalOpsRead++
+		case perfEvent.SkippedBytes > 0 && perfEvent.Op == 3:
+			totalBytesWSkipped += int(perfEvent.SkippedBytes)
+			totalOpsWrite++
+		case perfEvent.Op == 1 && perfEvent.ByteSize > 0:
+			totalBytesRead += int(perfEvent.ByteSize)
+			totalOpsRead++
+		case perfEvent.Op == 3 && perfEvent.ByteSize > 0:
+			totalBytesWritten += int(perfEvent.ByteSize)
+			totalOpsWrite++
 		}
 	}
 }
@@ -216,129 +241,3 @@ func (b *Binder) Stats() (BinderStats, error) {
 
 	return stats, nil
 }
-
-//
-// func Attach() {
-//
-// 	// 2. Find symbols in libssl.so
-// 	symbols, err := FindSoSymbols(soPath)
-// 	if err != nil {
-// 		fmt.Println("failed to find symbols in libssl.so", err)
-// 		return
-// 	}
-//
-// 	objs := opensslObjects{}
-// 	err = loadOpensslObjects(&objs, &ebpf.CollectionOptions{
-// 		Programs: ebpf.ProgramOptions{
-// 			// LogLevel: ebpf.LogLevelInstruction,
-// 			LogLevel: ebpf.LogLevelBranch,
-// 			LogSize:  10_000_000,
-// 		},
-// 	})
-// 	switch {
-// 	case err != nil:
-// 		fmt.Println("unwinding error chain:")
-// 		for {
-// 			fmt.Printf("%T\t\t %+v\n", err, err)
-//
-// 			err = errors.Unwrap(err)
-// 			if err == nil {
-// 				break
-// 			}
-// 		}
-//
-// 		return
-// 	}
-// 	defer func() { _ = objs.Close() }()
-//
-// 	// 3. Load eBPF programs
-// 	osslTable, err := loadOpenssl()
-// 	if err != nil {
-// 		fmt.Println("failed to load eBPF programs:", err)
-// 		return
-// 	}
-//
-// 	osslTable.Programs["uprobe_ssl_read"].AttachTarget = objs.UprobeSslRead
-// 	osslTable.Programs["uretprobe_ssl_read"].AttachTarget = objs.UretprobeSslRead
-// 	osslTable.Programs["uprobe_ssl_write"].AttachTarget = objs.UprobeSslWrite
-// 	osslTable.Programs["uretprobe_ssl_write"].AttachTarget = objs.UretprobeSslWrite
-//
-// 	lib, err := link.OpenExecutable(soPath)
-// 	if err != nil {
-// 		fmt.Println("failed to open shared lib ", soPath, err)
-// 		return
-// 	}
-//
-// 	// 4. Attach eBPF programs
-// 	for _, prog := range osslTable.Programs {
-// 		symbolExpectedName := prog.SectionName
-// 		onReturn := false
-// 		if strings.HasPrefix(symbolExpectedName, "uprobe/") {
-// 			symbolExpectedName = symbolExpectedName[len("uprobe/"):]
-// 		} else if strings.HasPrefix(symbolExpectedName, "uretprobe/") {
-// 			onReturn = true
-// 			symbolExpectedName = symbolExpectedName[len("uretprobe/"):]
-// 		} else {
-// 			continue
-// 		}
-//
-// 		if !slices.ContainsFunc(symbols, func(symbol elf.Symbol) bool { return symbol.Name == symbolExpectedName }) {
-// 			continue
-// 		}
-//
-// 		var linkI link.Link
-// 		if onReturn {
-// 			linkI, err = lib.Uretprobe(symbolExpectedName, prog.AttachTarget, nil)
-// 		} else {
-// 			linkI, err = lib.Uprobe(symbolExpectedName, prog.AttachTarget, nil)
-// 		}
-//
-// 		if err != nil {
-// 			fmt.Println("failed to attach", prog.SectionName, err)
-// 			continue
-// 		}
-//
-// 		defer func(linkI link.Link) {
-// 			_ = linkI.Close()
-// 		}(linkI)
-// 	}
-//
-// 	rd, err := ringbuf.NewReader(objs.Events)
-// 	if err != nil {
-// 		fmt.Println("failed to create ringbuf reader", err)
-// 		return
-// 	}
-//
-// 	go func() {
-// 		for {
-// 			fmt.Println("reading")
-// 			rec, err := rd.Read()
-// 			fmt.Println("read")
-//
-// 			switch {
-// 			case errors.Is(err, ringbuf.ErrClosed):
-// 				fmt.Println("ringbuf reader closed")
-// 				return
-// 			case err != nil:
-// 				fmt.Println("failed to read ringbuf record", err)
-// 			}
-//
-// 			perfEvent := opensslEvent{}
-//
-// 			buf := bytes.NewBuffer(rec.RawSa ple)
-// 			if err = binary.Read(buf, binary.LittleEndian, &perfEvent); err != nil {
-// 				fmt.Println("failed to read perf event", err)
-// 			}
-//
-// 			if perfEvent.SkippedBytes > 0 {
-// 				fmt.Println(perfEvent.Op, "skipped bytes", perfEvent.SkippedBytes)
-// 			} else {
-// 				fmt.Println(perfEvent.Op, "read bytes", perfEvent.ByteSize)
-// 				// Hexdump(perfEvent.Bytes[:perfEvent.ByteSize])
-// 			}
-//
-// 		}
-// 	}()
-//
-// 	time.Sleep(240 * time.Second)
-// }

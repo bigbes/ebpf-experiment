@@ -25,12 +25,16 @@ func main() {
 		stats, err := binder.Stats()
 		if err != nil {
 			fmt.Println("error: failed to get stats: ", err)
-		} else {
-			fmt.Println("stats: ", stats)
 		}
 
+		fmt.Println("total bytes read processed: ", stats.ReadSize)
+		fmt.Println("total bytes written processed: ", stats.WriteSize)
+		fmt.Println("total ops read processed: ", stats.ReadCount)
+		fmt.Println("total ops write processed: ", stats.WriteCount)
+		fmt.Println("---------------------------------")
+
 		_ = binder.Detach(ctx)
-		
+
 		os.Exit(0)
 	}()
 
