@@ -27,10 +27,15 @@ func main() {
 			fmt.Println("error: failed to get stats: ", err)
 		}
 
-		fmt.Println("total bytes read processed: ", stats.ReadSize)
+		fmt.Println("total bytes read processed:    ", stats.ReadSize)
 		fmt.Println("total bytes written processed: ", stats.WriteSize)
-		fmt.Println("total ops read processed: ", stats.ReadCount)
+		fmt.Println("total ops read processed:  ", stats.ReadCount)
 		fmt.Println("total ops write processed: ", stats.WriteCount)
+
+		fmt.Println("total uprobe read processed:     ", stats.UprobeReadCount)
+		fmt.Println("total uretprobe read processed:  ", stats.UretprobeReadCount)
+		fmt.Println("total uprobe write processed:    ", stats.UprobeWriteCount)
+		fmt.Println("total uretprobe write processed: ", stats.UretprobeWriteCount)
 		fmt.Println("---------------------------------")
 
 		_ = binder.Detach(ctx)

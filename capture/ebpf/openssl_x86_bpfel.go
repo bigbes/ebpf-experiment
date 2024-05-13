@@ -81,6 +81,7 @@ type opensslMapSpecs struct {
 	EventAllocator        *ebpf.MapSpec `ebpf:"event_allocator"`
 	Events                *ebpf.MapSpec `ebpf:"events"`
 	SslFdMap              *ebpf.MapSpec `ebpf:"ssl_fd_map"`
+	SslPidEnabledMap      *ebpf.MapSpec `ebpf:"ssl_pid_enabled_map"`
 	SslStatsMap           *ebpf.MapSpec `ebpf:"ssl_stats_map"`
 }
 
@@ -108,6 +109,7 @@ type opensslMaps struct {
 	EventAllocator        *ebpf.Map `ebpf:"event_allocator"`
 	Events                *ebpf.Map `ebpf:"events"`
 	SslFdMap              *ebpf.Map `ebpf:"ssl_fd_map"`
+	SslPidEnabledMap      *ebpf.Map `ebpf:"ssl_pid_enabled_map"`
 	SslStatsMap           *ebpf.Map `ebpf:"ssl_stats_map"`
 }
 
@@ -118,6 +120,7 @@ func (m *opensslMaps) Close() error {
 		m.EventAllocator,
 		m.Events,
 		m.SslFdMap,
+		m.SslPidEnabledMap,
 		m.SslStatsMap,
 	)
 }

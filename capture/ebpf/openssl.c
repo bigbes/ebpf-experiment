@@ -1,5 +1,6 @@
 //go:build ignore
-#define DEBUG_PRINT
+//#define DEBUG_PRINT
+#define SSL_PID_CHECK_FALSE
 
 #include "include/vmlinux_part.h"
 #include "include/helpers.h"
@@ -9,6 +10,7 @@
 
 #define OPENSSl_VERSION 0x30300000
 #include "openssl-args.c"
+#include "openssl-checker.c"
 #include "openssl-store.c"
 #include "openssl-stats.c"
 
@@ -16,8 +18,6 @@ char _license[] SEC("license") = "Dual BSD/GPL";
 
 #define MAX_BLOCK_SIZE  4 * 1024
 #define MAX_BLOCK_COUNT 4
-
-const volatile u32 target_pid = 0;
 
 int int_ceil(u64 l, u64 r) {
     return (l + r - 1) / r;
@@ -111,13 +111,12 @@ inline __attribute__((always_inline)) int common_send_block_multi(struct event *
 SEC("uprobe/SSL_read")
 int uprobe_ssl_read(struct pt_regs *ctx)
 {
+    ssl_stats_call_uprobe_read();
+
     u64 current_pid_tgid = bpf_get_current_pid_tgid();
     u32 pid = current_pid_tgid >> 32;
 
-    u64 current_uid_gid = bpf_get_current_uid_gid();
-    u32 uid = current_uid_gid;
-
-    if (target_pid != 0 && target_pid != pid) {
+    if (!ssl_pid_enabled(pid)) {
         return 0;
     }
 
@@ -147,10 +146,12 @@ int uprobe_ssl_read(struct pt_regs *ctx)
 SEC("uretprobe/SSL_read")
 int uretprobe_ssl_read(struct pt_regs *ctx)
 {
+    ssl_stats_call_uretprobe_read();
+
     u64 pid_tgid = bpf_get_current_pid_tgid();
     u32 pid = pid_tgid >> 32;
 
-    if (target_pid != 0 && target_pid != pid) {
+    if (!ssl_pid_enabled(pid)) {
         return 0;
     }
 
@@ -244,13 +245,12 @@ int uretprobe_ssl_read(struct pt_regs *ctx)
 SEC("uprobe/SSL_write")
 int uprobe_ssl_write(struct pt_regs *ctx)
 {
+    ssl_stats_call_uprobe_write();
+
     u64 current_pid_tgid = bpf_get_current_pid_tgid();
     u32 pid = current_pid_tgid >> 32;
 
-    u64 current_uid_gid = bpf_get_current_uid_gid();
-    u32 uid = current_uid_gid;
-
-    if (target_pid != 0 && target_pid != pid) {
+    if (!ssl_pid_enabled(pid)) {
         return 0;
     }
 
@@ -280,14 +280,15 @@ int uprobe_ssl_write(struct pt_regs *ctx)
 SEC("uretprobe/SSL_write")
 int uretprobe_ssl_write(struct pt_regs *ctx)
 {
+    ssl_stats_call_uretprobe_write();
+
     u64 pid_tgid = bpf_get_current_pid_tgid();
     u32 pid = pid_tgid >> 32;
 
-    if (target_pid != 0 && target_pid != pid) {
+    if (!ssl_pid_enabled(pid)) {
         return 0;
     }
 
-    /* debug_bpf_printk("uprobe/ssl_write [pid: %d]", pid); */
 
     int ret = (int )PT_REGS_RC(ctx);
     if (ret < 0) {

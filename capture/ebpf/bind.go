@@ -87,7 +87,7 @@ func (b *Binder) Attach() error {
 		b.spec.Programs["uretprobe_ssl_write"].AttachTarget = b.objects.UretprobeSslWrite
 	}
 
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 8; i++ {
 		err = b.objects.SslStatsMap.Put(uint32(i), uint64(0))
 		if err != nil {
 			return wrap(err, "failed to put ssl stats map "+strconv.Itoa(i))
@@ -160,12 +160,12 @@ func (b *Binder) Events(ctx context.Context) error {
 	)
 
 	defer func() {
-		fmt.Println("Total bytes read", totalBytesRead)
-		fmt.Println("Total bytes written", totalBytesWritten)
-		fmt.Println("Total bytes read skipped", totalBytesRSkipped)
-		fmt.Println("Total bytes read written", totalBytesWSkipped)
-		fmt.Println("Total packets read", totalOpsRead)
-		fmt.Println("Total packets write", totalOpsWrite)
+		fmt.Println("Total bytes read    ", totalBytesRead)
+		fmt.Println("Total bytes written ", totalBytesWritten)
+		fmt.Println("Total bytes read skipped ", totalBytesRSkipped)
+		fmt.Println("Total bytes read written ", totalBytesWSkipped)
+		fmt.Println("Total packets read  ", totalOpsRead)
+		fmt.Println("Total packets write ", totalOpsWrite)
 		fmt.Println("---------------------------------")
 	}()
 
@@ -214,6 +214,11 @@ type BinderStats struct {
 	ReadSize   uint64
 	WriteCount uint64
 	WriteSize  uint64
+
+	UprobeReadCount     uint64
+	UretprobeReadCount  uint64
+	UprobeWriteCount    uint64
+	UretprobeWriteCount uint64
 }
 
 func (b *Binder) Stats() (BinderStats, error) {
@@ -237,6 +242,26 @@ func (b *Binder) Stats() (BinderStats, error) {
 	err = b.objects.SslStatsMap.Lookup(uint32(3), &stats.WriteSize)
 	if err != nil {
 		return BinderStats{}, wrap(err, "failed to lookup ssl read write stats")
+	}
+
+	err = b.objects.SslStatsMap.Lookup(uint32(4), &stats.UprobeReadCount)
+	if err != nil {
+		return BinderStats{}, wrap(err, "failed to lookup ssl read count stats")
+	}
+
+	err = b.objects.SslStatsMap.Lookup(uint32(5), &stats.UretprobeReadCount)
+	if err != nil {
+		return BinderStats{}, wrap(err, "failed to lookup ssl read count stats")
+	}
+
+	err = b.objects.SslStatsMap.Lookup(uint32(6), &stats.UprobeWriteCount)
+	if err != nil {
+		return BinderStats{}, wrap(err, "failed to lookup ssl read count stats")
+	}
+
+	err = b.objects.SslStatsMap.Lookup(uint32(7), &stats.UretprobeWriteCount)
+	if err != nil {
+		return BinderStats{}, wrap(err, "failed to lookup ssl read count stats")
 	}
 
 	return stats, nil
